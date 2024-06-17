@@ -7,6 +7,9 @@ public class Board {
     private static final int WIN_COUNT = 5;
     private String[][] board;
 
+    private List<Point> removedPoints=new ArrayList<>();  // 用于存储被清除的胜利棋子
+    private List<Point> randomRemovedPoints = new ArrayList<>();  // 用于存储被随机清除的对手棋子
+
     public Board() {
         board = new String[SIZE][SIZE];
     }
@@ -58,6 +61,8 @@ public class Board {
 
     public int clearWinningLine(String player) {
         Set<Point> toClear = new HashSet<>();  // Using a set to avoid duplicate removals
+        removedPoints.clear();  // 清空之前存储的胜利棋子列表
+        randomRemovedPoints.clear();  // 清空之前存储的随机清除棋子列表
 
         // Check all possible lines from every board position
         for (int i = 0; i < SIZE; i++) {
@@ -70,20 +75,19 @@ public class Board {
         }
 
         // Remove all collected points and count them
-        int totalRemoved = 0;
         for (Point p : toClear) {
             if (board[p.x][p.y] != null) {
                 board[p.x][p.y] = null;
-                totalRemoved++;
+                removedPoints.add(p);  // 添加到胜利棋子列表
             }
         }
 
         // Optionally adjust opponent piece removal as needed
-        if (totalRemoved > 0) {
-            removeRandomOpponentPieces(player, totalRemoved);
+        if (!toClear.isEmpty()) {
+            removeRandomOpponentPieces(player, toClear.size());
         }
 
-        return totalRemoved-4;  // You may adjust this return value based on your scoring rules
+        return removedPoints.size()-4;  // You may adjust this return value based on your scoring rules
     }
 
     private void collectClearableLines(String player, int startX, int startY, int stepX, int stepY, Set<Point> toClear) {
@@ -92,33 +96,53 @@ public class Board {
                 int x = startX + i * stepX;
                 int y = startY + i * stepY;
                 if (x >= 0 && x < SIZE && y >= 0 && y < SIZE) {
-                    toClear.add(new Point(x, y));
+                    toClear.add(new Point(x, y, player));
                 }
             }
         }
     }
 
-        private class Point {
-            int x, y;
+    public static class Point {
+        int x, y;
+        String player;  // 添加玩家名称字段
 
-            Point(int x, int y) {
-                this.x = x;
-                this.y = y;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) return true;
-                if (o == null || getClass() != o.getClass()) return false;
-                Point point = (Point) o;
-                return x == point.x && y == point.y;
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(x, y);
-            }
+        public Point(int x, int y, String player) {
+            this.x = x;
+            this.y = y;
+            this.player = player;
         }
+
+        public int getX() {
+            return x;
+        }
+
+        public int getY() {
+            return y;
+        }
+
+        public String getPlayer() {  // 添加 getter 方法
+            return player;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Point point = (Point) o;
+            return x == point.x && y == point.y && Objects.equals(player, point.player);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, y, player);
+        }
+
+        @Override
+        public String toString() {
+            return "{" + "x=" + x + ", y=" + y + ", player=" + player + '}';
+        }
+    }
+
     private void removeRandomOpponentPieces(String player, int count) {
         List<String> opponents = new ArrayList<>();
         // 获取所有非获胜玩家的名字
@@ -146,7 +170,17 @@ public class Board {
             for (int i = 0; i < count && !opponentPieces.isEmpty(); i++) {
                 int[] piece = opponentPieces.remove(random.nextInt(opponentPieces.size()));
                 board[piece[0]][piece[1]] = null;
+                randomRemovedPoints.add(new Point(piece[0], piece[1], opponent));  // 添加到随机清除棋子列表，并保存玩家名称
             }
         }
     }
+
+    public List<Point> getRemovedPoints() {
+        return removedPoints;  // 新增：返回胜利棋子列表
+    }
+
+    public List<Point> getRandomRemovedPoints() {
+        return randomRemovedPoints;  // 新增：返回随机清除棋子列表
+    }
+    
 }

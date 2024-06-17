@@ -110,6 +110,14 @@ public class Game {
         return board.checkWin(player);
     }
 
+    public List<Board.Point> getRemovedPoints() {
+        return board.getRemovedPoints();  // 新增：获取胜利棋子列表
+    }
+
+    public List<Board.Point> getRandomRemovedPoints() {
+        return board.getRandomRemovedPoints();  // 新增：获取随机清除棋子列表
+    }
+
     private void printBoard() {
         String[][] boardArray = board.getBoard();
         System.out.print("   ");

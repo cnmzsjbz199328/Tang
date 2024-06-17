@@ -53,6 +53,7 @@ public class GameController {
     @PostMapping("/move")
     @ResponseBody
     public Map<String, Object> processMove(@RequestBody Map<String, Integer> move) {
+        System.out.println("Processing move: " + move);
         int row = move.get("row");
         int col = move.get("col");
 //        User currentUser = game.getCurrentPlayer(); // 获取当前用户
@@ -69,6 +70,8 @@ public class GameController {
                 response.put("winner", game.getCurrentPlayer());
                 response.put("score", currentUser.getScore());  // 更新分数
                 response.put("poem", poemService.getRandomPoem().getLines());// Send poem when player wins
+                response.put("removedPoints", game.getRemovedPoints());  // 添加获胜棋子列表
+                response.put("randomRemovedPoints", game.getRandomRemovedPoints());  // 添加随机清除棋子列表
             }
             game.nextPlayer();
             // 添加策略玩家的判断和执行策略
@@ -82,11 +85,14 @@ public class GameController {
                     response.put("winner", game.getCurrentPlayer());
                     response.put("score", currentUser.getScore());
                     response.put("poem", poemService.RandomWin());  // Ensure this returns a Poem object with a content attribute
+                    response.put("removedPoints", game.getRemovedPoints());  // 添加获胜棋子列表
+                    response.put("randomRemovedPoints", game.getRandomRemovedPoints());  // 添加随机清除棋子列表
                 }
                 game.nextPlayer();
             }
         }
         response.put("users", userPool.getUsers()); // 修改点6：添加用户列表到响应
+        System.out.println("Response: " + response);
         return response;
 
     }
