@@ -152,26 +152,46 @@ function updateBoard(board, removedPoints, randomRemovedPoints) {
 
 
 function registerPlayer() {
-    var username = document.getElementById('username');
-    var registerButton = document.querySelector('button[onclick="registerPlayer()"]');  // 获取注册按钮
-    fetch('/game/register', {
-        method: 'POST',
+    // 检查会话中是否已经存在用户名
+    fetch('/game/check-session', {
+        method: 'GET',
         headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: 'username=' + encodeURIComponent(username.value)
+            'Content-Type': 'application/json'
+        }
     })
     .then(response => response.json())
     .then(data => {
-         alert(data.message);  // 显示来自服务器的消息
-         username.disabled = true;  // 禁用用户名输入框
-         registerButton.disabled = true;  // 禁用注册按钮
-         updateUsers(data.users);  // 更新用户列表
+        if (data.username) {
+            alert("You have already registered as " + data.username);
+        } else {
+            // 如果会话中没有用户名，则执行注册
+            var username = document.getElementById('username');
+            var registerButton = document.querySelector('button[onclick="registerPlayer()"]');
+            fetch('/game/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: 'username=' + encodeURIComponent(username.value)
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                username.disabled = true;
+                registerButton.disabled = true;
+                updateUsers(data.users);
+            })
+            .catch(error => {
+                console.error('Error during registration:', error);
+            });
+        }
     })
     .catch(error => {
-        console.error('Error during registration:', error);
+        console.error('Error during session check:', error);
     });
 }
+
+
 
 function setStrategy() {
     var strategy = document.getElementById('strategy').value;

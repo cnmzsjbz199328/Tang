@@ -2,13 +2,16 @@ package com.tang0488;
 
 import com.tang0488.Poem.Poem;
 import com.tang0488.Poem.PoemService;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.core.AbstractDestinationResolvingMessagingTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
@@ -33,6 +36,7 @@ public class GameController {
         this.poemService = poemService;
     }
 
+    //@PreAuthorize("isAuthenticated()")
     @GetMapping
     public String getGame(Model model) {
         model.addAttribute("game", game);
@@ -106,11 +110,28 @@ public class GameController {
         }
     }
 
+    @GetMapping("/check-session")
+    @ResponseBody
+    public Map<String, Object> checkSession(HttpServletRequest request) {
+        Map<String, Object> response = new HashMap<>();
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            String username = (String) session.getAttribute("username");
+            if (username != null) {
+                response.put("username", username);
+            }
+        }
+        return response;
+    }
+
+
     @PostMapping("/register")
     @ResponseBody
-    public Map<String, Object> registerPlayer(@RequestParam String username) {
+    public Map<String, Object> registerPlayer(@RequestParam String username, HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
-        if (userPool.findByUsername(username) != null) {
+        if (request.getSession().getAttribute("username") != null) {
+            response.put("message", "You are already registered as " + request.getSession().getAttribute("username"));
+        } else if (userPool.findByUsername(username) != null) {
             response.put("message", "Username already taken.");
         }else {
             User newUser = new User();
@@ -118,7 +139,9 @@ public class GameController {
             //game.initializePlayers();
             userPool.addUser(newUser);
             messagingTemplate.convertAndSend("/topic/users", userPool.getUsers());
+            request.getSession().setAttribute("username", username); // Bind username to session
             response.put("message", "Player registered successfully.");
+            System.out.println("Session username set: " + request.getSession().getAttribute("username"));
         }
         response.put("users", userPool.getUsers()); // 修改点7：添加用户列表到响应
         return response;

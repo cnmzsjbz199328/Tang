@@ -1,9 +1,11 @@
 package com.tang0488;
 
-import jakarta.persistence.*;
-//import lombok.Getter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import java.util.Collection;
+import java.util.Collections;
 
-public class User {
+public class User implements UserDetails{
     private Long id;
     private String username;
     private int score;
@@ -39,5 +41,40 @@ public class User {
 
     public void addScore(int score) {
         this.score += score;
+    }
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return Collections.emptyList(); // Return an empty list of authorities
+    }
+
+    @Override
+    public String getPassword() {
+        return ""; // Returning empty string as we are not using passwords in this example
+    }
+
+
+    @Override
+    public String getUsername() {
+        return this.username;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
     }
 }
