@@ -1,112 +1,105 @@
 package com.tang0488;
-import com.tang0488.Poem.Poem;
+
 import com.tang0488.Poem.PoemService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
-import java.util.ArrayList;
+//import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSession;
+
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@WebMvcTest(controllers = GameController.class, excludeAutoConfiguration = SecurityConfig.class)
 public class GameControllerTest {
 
-    @LocalServerPort
-    private int port;
-
     @Autowired
-    private TestRestTemplate restTemplate;
+    private MockMvc mockMvc;
 
     @MockBean
     private Game game;
 
     @MockBean
+    private RandomMoveStrategy randomMoveStrategy;
+
+    @MockBean
+    private SmartMoveStrategy smartMoveStrategy;
+
+    @MockBean
     private UserPool userPool;
+
+    @MockBean
+    private SimpMessagingTemplate messagingTemplate;
 
     @MockBean
     private PoemService poemService;
 
-    @Mock
-    private User mockUser;
-
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(new GameController(game, randomMoveStrategy, smartMoveStrategy, userPool, messagingTemplate, poemService))
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
     }
 
     @Test
-    public void testProcessMove() {
+    @WithMockUser(username = "user1")
+    public void testProcessMove_UnauthorizedUser() throws Exception {
+        HttpSession session = mock(HttpSession.class);
+        when(session.getAttribute("username")).thenReturn("user2"); // 模拟会话中的用户
+
         Map<String, Integer> move = new HashMap<>();
-        move.put("row", 7);
-        move.put("col", 7);
+        move.put("row", 1);
+        move.put("col", 1);
 
-        // 模拟游戏行为
-        when(game.makeMove(7, 7)).thenReturn(true);
-        when(game.getCurrentPlayer()).thenReturn("player1");
-        when(game.getBoard()).thenReturn(new Board());
-        when(game.checkWin("player1")).thenReturn(true);
-        when(game.getRemovedPoints()).thenReturn(new ArrayList<>());
-        when(game.getRandomRemovedPoints()).thenReturn(new ArrayList<>());
-        when(userPool.findByUsername("player1")).thenReturn(mockUser);
-        when(mockUser.getScore()).thenReturn(6);
-        when(poemService.getRandomPoem()).thenReturn(new Poem("Test Poem"));
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-Type", "application/json");
-        HttpEntity<Map<String, Integer>> request = new HttpEntity<>(move, headers);
-
-        ResponseEntity<Map> response = restTemplate.exchange("http://localhost:" + port + "/game/move", HttpMethod.POST, request, Map.class);
-
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().get("moveMade")).isEqualTo(true);
-        assertThat(response.getBody().get("winner")).isEqualTo("player1");
-        assertThat(response.getBody().get("score")).isEqualTo(6);
-        assertThat(response.getBody().get("poem")).isEqualTo("Test Poem");
+        mockMvc.perform(post("/game/move")
+                        .sessionAttr("username", "user2")
+                        .with(SecurityMockMvcRequestPostProcessors.user("user1")) // 模拟登录的用户
+                        .contentType("application/json")
+                        .content("{\"row\": 1, \"col\": 1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.moveMade").value(false))
+                .andExpect(jsonPath("$.message").value("You are not allowed to make this move."));
     }
 
     @Test
-    public void testProcessMoveWin() {
+    @WithMockUser(username = "user1")
+    public void testProcessMove_AuthorizedUser() throws Exception {
+        HttpSession session = mock(HttpSession.class);
+        when(session.getAttribute("username")).thenReturn("user1"); // 模拟会话中的用户
+        when(game.getCurrentPlayer()).thenReturn("user1");
+        when(game.makeMove(1, 1)).thenReturn(true);
+        when(game.checkWin("user1")).thenReturn(false);
+
         Map<String, Integer> move = new HashMap<>();
-        move.put("row", 7);
-        move.put("col", 7);
+        move.put("row", 1);
+        move.put("col", 1);
 
-        // 模拟游戏行为
-        when(game.makeMove(7, 7)).thenReturn(true);
-        when(game.getCurrentPlayer()).thenReturn("player1");
-        when(game.getBoard()).thenReturn(new Board());
-        when(game.checkWin("player1")).thenReturn(true);
-        when(game.getRemovedPoints()).thenReturn(new ArrayList<>());
-        when(game.getRandomRemovedPoints()).thenReturn(new ArrayList<>());
-        when(userPool.findByUsername("player1")).thenReturn(mockUser);
-        when(mockUser.getScore()).thenReturn(6);
-        when(poemService.getRandomPoem()).thenReturn(new Poem("Test Poem"));
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-Type", "application/json");
-        HttpEntity<Map<String, Integer>> request = new HttpEntity<>(move, headers);
-
-        ResponseEntity<Map> response = restTemplate.exchange("http://localhost:" + port + "/game/move", HttpMethod.POST, request, Map.class);
-
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().get("moveMade")).isEqualTo(true);
-        assertThat(response.getBody().get("winner")).isEqualTo("player1");
-        assertThat(response.getBody().get("score")).isEqualTo(6);
-        assertThat(response.getBody().get("poem")).isEqualTo("Test Poem");
+        mockMvc.perform(post("/game/move")
+                        .sessionAttr("username", "user1")
+                        .with(SecurityMockMvcRequestPostProcessors.user("user1")) // 模拟登录的用户
+                        .contentType("application/json")
+                        .content("{\"row\": 1, \"col\": 1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.moveMade").value(true))
+                .andExpect(jsonPath("$.currentPlayer").value("user1"));
     }
 }

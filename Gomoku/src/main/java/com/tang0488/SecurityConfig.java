@@ -22,9 +22,10 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable()) // Disable CSRF for simplicity, enable it in production
                 .authorizeHttpRequests(authorize -> authorize
-                                .requestMatchers("/").permitAll() // Allow public access to these endpoints
-                                .requestMatchers("/game/**").authenticated() // Require authentication for /game/** endpoints
-                        .anyRequest().permitAll()
+//                                .requestMatchers("/").permitAll() // Allow public access to these endpoints
+//                                .requestMatchers("/game/register").permitAll() // Allow public access to register endpoint
+//                                .requestMatchers("/game/**").authenticated() // Require authentication for /game/** endpoints
+                                .anyRequest().permitAll()
                 )
                 .sessionManagement(session -> session
                         .maximumSessions(1) // Ensures only one session per user

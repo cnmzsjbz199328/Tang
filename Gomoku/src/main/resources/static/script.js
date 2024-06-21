@@ -1,4 +1,5 @@
 var stompClient = null;
+var isAnimating = false; // 用于跟踪动画状态
 
 function connect() {
     var socket = new SockJS('/ws');
@@ -8,7 +9,20 @@ function connect() {
         stompClient.subscribe('/topic/users', function (message) {
             updateUsers(JSON.parse(message.body));
         });
+        // 新增：订阅棋局更新
+        stompClient.subscribe('/topic/game-progress', function (message) {
+        showGameProgress(JSON.parse(message.body));
     });
+    });
+}
+
+// 获取当前游戏状态
+function showGameProgress(data) {
+    updateBoard(data.board, data.removedPoints, data.randomRemovedPoints); // 更新棋盘
+    updateUsers(data.users); // 更新用户列表
+    if (data.poem) {
+        displayPoem(data.poem); // 显示诗歌
+    }
 }
 
 function updateUsers(users) {
@@ -27,6 +41,7 @@ function makeMove(row, col) {
         headers: {
             'Content-Type': 'application/json'
         },
+        credentials: 'include', // 发送请求时附带身份验证信息
         body: JSON.stringify({ row: row, col: col })
     })
     .then(response => {
@@ -48,8 +63,6 @@ function makeMove(row, col) {
                     return;
                 }
 
-// 调试输出 removedPoints 和 randomRemovedPoints 的内容
-        //console.log('Received board:', data.board);
         console.log('Removed Points:', data.removedPoints);
         console.log('Random Removed Points:', data.randomRemovedPoints);
 
@@ -141,14 +154,13 @@ function updateBoard(board, removedPoints, randomRemovedPoints) {
                 if (cell) {
                     const animationClass = applyShakeAndRandomFallAnimation(cell);
                     cell.classList.add(animationClass);  // 添加随机动画效果
-//                    setTimeout(() => {
-//                        cell.innerText = '';  // 清除单元格的文本内容
-//                        cell.classList.remove(animationClass);  // 移除动画类
-//                    }, 10000); // 动画持续3秒后清除内容和样式
                 }
             });
-        }, 1000); // 延迟1秒后执行动画效果和清除操作
-    }
+
+            setTimeout(() => {
+                    }, 10000); // 动画持续10秒后重置动画状态
+                }, 1000); // 延迟1秒后执行动画效果和清除操作
+            }
 
 
 function registerPlayer() {
@@ -247,4 +259,10 @@ function applyShakeAndRandomFallAnimation(cell) {
             cell.classList.remove(animationClass);
         }, 10000); // 动画持续3秒后清除内容和样式
     }, 1000); // 延迟1秒后移除抖动效果并应用飘落效果
+}
+
+// 页面加载时连接 WebSocket 并启动自动刷新
+window.onload = function() {
+    connect(); // 连接 WebSocket 服务器
+    createBoard();
 }
