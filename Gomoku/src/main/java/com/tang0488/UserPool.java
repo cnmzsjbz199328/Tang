@@ -39,4 +39,8 @@ public class UserPool {
         }
         return null;
     }
+
+    public void removeUser(String username){
+        users.removeIf(user -> user.getName().equals(username));
+    }
 }

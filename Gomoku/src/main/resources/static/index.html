@@ -22,14 +22,25 @@
         <div id="game-container">
             <table id="board"></table>
             <div id="controls">
+                <div id="room-controls">
+                    <div>
+                        <label for="room-name">Room Name:</label>
+                        <input type="text" id="room-name" name="room-name">
+                    </div>
+                    <div>
+                        <label for="room-password">Password:</label>
+                        <input type="password" id="room-password" name="room-password">
+                    </div>
+                    <button onclick="createRoom()">Create Room</button>
+                    <button onclick="joinRoom()">Join Room</button>
+                </div>
+
                 <div id="register-section" class="control-section">
-                    <h2>Register Player</h2>
                     <label for="username">Username:</label>
                     <input type="text" id="username" placeholder="Enter username">
                     <button onclick="registerPlayer()">Register</button>
                 </div>
                 <div class="control-section">
-                    <h2>Set Strategy</h2>
                     <label for="strategy">Strategy:</label>
                     <select id="strategy">
                         <option value="random">Random</option>

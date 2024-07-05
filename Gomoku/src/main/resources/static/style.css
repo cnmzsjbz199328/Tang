@@ -58,6 +58,33 @@ main {
     width: 300px;
 }
 
+#room-controls {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin: 10px;
+    width: 200px;
+    float: right; /* 使房间控件位于界面的右侧 */
+}
+
+#room-controls h3 {
+    margin-top: 0;
+}
+
+#room-controls div {
+    margin-bottom: 10px;
+}
+
+#room-controls label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+#room-controls input {
+    width: 100%;
+    padding: 5px;
+    box-sizing: border-box;
+}
+
 .control-section {
     margin-bottom: 20px;
 }
@@ -67,10 +94,17 @@ main {
 }
 
 input[type="text"] {
-    width: 100%;
+    position: relative;
+    background: #e0e0e0;
+    margin-bottom: 5px;
     padding: 10px;
-    margin-bottom: 10px;
-    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+select, button {
+    height: 40px; /* 统一高度 */
+    margin-bottom: 5px;
+    padding: 10px;
     border-radius: 5px;
 }
 
@@ -93,10 +127,23 @@ button:hover {
 }
 
 #users li {
+    position: relative;
     background: #e0e0e0;
     margin-bottom: 5px;
     padding: 10px;
     border-radius: 5px;
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace; /* 打字机字体风格 */
+}
+
+@keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+.blink {
+    animation: blink 1s infinite;
 }
 
 #poem-section {

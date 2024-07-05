@@ -24,50 +24,94 @@ import java.util.stream.Collectors;
 @RequestMapping("/game")
 public class GameController {
 
-    private final Game game;
-    private final RandomMoveStrategy randomMoveStrategy;
-    private final SmartMoveStrategy smartMoveStrategy;
-    private final UserPool userPool;
+    private final RoomService roomService;
     private final SimpMessagingTemplate messagingTemplate;
-    private PoemService poemService;
+
 
     @Autowired
-    public GameController(Game game, RandomMoveStrategy randomMoveStrategy, SmartMoveStrategy smartMoveStrategy, UserPool userPool, SimpMessagingTemplate messagingTemplate, PoemService poemService) {
-        this.game = game;
-        this.randomMoveStrategy = randomMoveStrategy;
-        this.smartMoveStrategy = smartMoveStrategy;
-        this.userPool = userPool;
+    public GameController(RoomService roomService, SimpMessagingTemplate messagingTemplate, PoemService poemService) {
+        this.roomService = roomService;
         this.messagingTemplate = messagingTemplate;
-        this.poemService = poemService;
+    }
+
+    private String getRoomName(HttpSession session){
+        return (String) session.getAttribute("roomName");
     }
 
     //@PreAuthorize("isAuthenticated()")
     @GetMapping
-    public String getGame(Model model) {
-        model.addAttribute("game", game);
+    public String getGame(Model model, HttpSession session) {
+        String roomName = getRoomName(session);
+        if (roomName != null) {
+            Game game = roomService.getRoom(roomName).getGame();
+            model.addAttribute("game", game);
+        }
         return "index";
     }
 
     @GetMapping("/random-poem")
-    public Poem getRandomPoem() {
-        return poemService.getRandomPoem();
+    public Poem getRandomPoem(HttpSession session) {
+        String roomName = getRoomName(session);
+        return roomService.getRoom(roomName).getGame().getPoemService().getRandomPoem();
     }
 
     @GetMapping("/players")
     @ResponseBody
-    public List<String> getPlayers() {
-        return userPool.getUsers().stream()
+    public List<String> getPlayers(HttpSession session) {
+        String roomName = getRoomName(session);
+        return roomService.getRoom(roomName).getGame().getPlayers().stream()
                 .map(User::getName)
                 .collect(Collectors.toList());
     }
 
+    @PostMapping("/create")
+    public ResponseEntity<String> createRoom(@RequestParam String roomName, @RequestParam String password, HttpSession session) {
+        if (roomService.roomExists(roomName)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("Room name already exists.");
+        }
+        roomService.createRoom(roomName, password);
+
+        joinRoom(roomName, password, session);
+        return ResponseEntity.ok(roomName);
+    }
+
+    @PostMapping("/join")
+    public ResponseEntity<String> joinRoom(@RequestParam String roomName, @RequestParam String password, HttpSession session) {
+        String oldRoomName = getRoomName(session);
+        String oldUsername = (String) session.getAttribute("username");
+
+        if (oldRoomName != null && oldUsername != null) {
+            roomService.leaveRoom(oldRoomName, oldUsername);
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "User " + oldUsername + " has left the room.");
+            response.put("users", roomService.getRoom(oldRoomName).getGame().getUserPool().getUsers());
+            messagingTemplate.convertAndSend("/topic/users/" + oldRoomName, response);
+
+        }
+
+        session.removeAttribute("roomName");
+        session.removeAttribute("username");
+
+        boolean success = roomService.joinRoom(roomName, password);
+        if (success) {
+            session.setAttribute("roomName", roomName);
+            Map<String, Object> response = new HashMap<>();
+            response.put("users", roomService.getRoom(roomName).getGame().getUserPool().getUsers());
+            messagingTemplate.convertAndSend("/topic/users/" + roomName, response);
+            return ResponseEntity.ok("Joined room successfully.");
+        } else {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Invalid room ID or password.");
+        }
+    }
+
     // 增加的接口，用于获取当前游戏状态
     @GetMapping("/state")
-    public Map<String, Object> getCurrentGameState() {
+    public Map<String, Object> getCurrentGameState(HttpSession session) {
+        String roomName = getRoomName(session);
         Map<String, Object> gameState = new HashMap<>();
-        gameState.put("currentPlayer", game.getCurrentPlayer());
-        gameState.put("board", game.getBoard().getBoard());
-        gameState.put("users", userPool.getUsers());
+        gameState.put("currentPlayer", roomService.getRoom(roomName).getGame().getCurrentPlayer());
+        gameState.put("board", roomService.getBoard(roomName).getBoard());
+        gameState.put("users", roomService.getRoom(roomName).getGame().getUserPool().getUsers());
 //        gameState.put("poem", poemService.getRandomPoem().getLines());
         return gameState;
     }
@@ -77,6 +121,12 @@ public class GameController {
     @ResponseBody
     public Map<String, Object> processMove(@RequestBody Map<String, Integer> move, HttpSession session) {
         System.out.println("Processing move: " + move);
+
+        String roomName = getRoomName(session);
+        Game game = roomService.getRoom(roomName).getGame();
+        UserPool userPool = game.getUserPool();
+        PoemService poemService = game.getPoemService();
+
         String sessionUsername = (String) session.getAttribute("username");  // 从会话中获取当前用户名
         if (sessionUsername == null) {
             return Map.of("message", "You need to be registered and logged in to make a move.");
@@ -124,22 +174,26 @@ public class GameController {
                 }
                 game.nextPlayer();
             }
+            response.put("currentPlayer", game.getCurrentPlayer());
         }
         response.put("users", userPool.getUsers()); // 修改点6：添加用户列表到响应
         // 广播更新给所有客户端
-        messagingTemplate.convertAndSend("/topic/game-progress", response);
+        messagingTemplate.convertAndSend("/topic/game-progress/" + roomName, response);
         System.out.println("Response: " + response);
         return response;
-
     }
 
     @PostMapping("/strategy")
     @ResponseBody
-    public void setStrategy(@RequestParam String strategy) {
+    public void setStrategy(@RequestParam String strategy,HttpSession session) {
+        String roomName = getRoomName(session);
+        Game game = roomService.getRoom(roomName).getGame();
+        MoveStrategy randomMoveStrategy= game.getMoveStrategy();
+        MoveStrategy smartMoveStrategy =game.getMoveStrategy();
         if ("random".equalsIgnoreCase(strategy)) {
-            game.setMoveStrategy(randomMoveStrategy);
+            game.setMoveStrategy(new RandomMoveStrategy());
         } else if ("smart".equalsIgnoreCase(strategy)) {
-            game.setMoveStrategy(smartMoveStrategy);
+            game.setMoveStrategy(new SmartMoveStrategy(new RandomMoveStrategy()));
         }
     }
 
@@ -170,11 +224,16 @@ public class GameController {
     public Map<String, Object> registerPlayer(@RequestParam String username, HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
 
+        HttpSession session = request.getSession();
+        String roomName = getRoomName(session);
         // 检查会话中是否已经绑定了用户名，防止重复注册
-        if (request.getSession().getAttribute("username") != null) {
+        if (session.getAttribute("username") != null) {
             response.put("message", "You are already registered as " + request.getSession().getAttribute("username"));
             return response;
         }
+
+        Room room = roomService.getRoom(roomName);
+        UserPool userPool = room.getGame().getUserPool();
 
         // 检查用户名是否已被占用
         if (userPool.findByUsername(username) != null) {
@@ -190,41 +249,15 @@ public class GameController {
         userPool.addUser(newUser);
 
         // 通过WebSocket广播新的用户列表
-        messagingTemplate.convertAndSend("/topic/users", userPool.getUsers());
+        messagingTemplate.convertAndSend("/topic/users/" +roomName, userPool.getUsers());
 
         // 在会话中设置用户名，标记用户已注册
-        request.getSession().setAttribute("username", username);
+        session.setAttribute("username", username);
         response.put("message", "Player registered successfully.");
-        System.out.println("Session username set: " + request.getSession().getAttribute("username"));
+        System.out.println("Session username set: " + session.getAttribute("username"));
 
         // 将用户列表添加到响应中，使客户端可以立即看到更新
         response.put("users", userPool.getUsers());
         return response;
     }
 }
-//    public Map<String, Object> registerPlayer(@RequestParam String username, HttpServletRequest request) {
-//        Map<String, Object> response = new HashMap<>();
-//        if (request.getSession().getAttribute("username") != null) {
-//            response.put("message", "You are already registered as " + request.getSession().getAttribute("username"));
-//        } else if (userPool.findByUsername(username) != null) {
-//            response.put("message", "Username already taken.");
-//        }else {
-//            User newUser = new User();
-//            newUser.setName(username);
-//            //game.initializePlayers();
-//            userPool.addUser(newUser);
-//            messagingTemplate.convertAndSend("/topic/users", userPool.getUsers());
-//            request.getSession().setAttribute("username", username); // Bind username to session
-//            response.put("message", "Player registered successfully.");
-//            System.out.println("Session username set: " + request.getSession().getAttribute("username"));
-//        }
-//        response.put("users", userPool.getUsers()); // 修改点7：添加用户列表到响应
-//        return response;
-//    }
-//
-//    @GetMapping("/users")
-//    @ResponseBody
-//    public List<User> getUsers() {
-//        return userPool.getUsers(); // 修改点8：返回用户列表
-//    }
-//}

@@ -1,35 +1,106 @@
 var stompClient = null;
-var isAnimating = false; // 用于跟踪动画状态
+var currentRoomName = null; // 当前房间名称
+var subscriptions = {}; // 保存订阅的ID
+
+window.onload = function() {
+    connect();
+    createBoard();
+}
 
 function connect() {
     var socket = new SockJS('/ws');
     stompClient = Stomp.over(socket);
     stompClient.connect({}, function (frame) {
         console.log('Connected: ' + frame);
-        stompClient.subscribe('/topic/users', function (message) {
-            updateUsers(JSON.parse(message.body));
-        });
-        // 新增：订阅棋局更新
-        stompClient.subscribe('/topic/game-progress', function (message) {
-        showGameProgress(JSON.parse(message.body));
     });
-    });
+}
+
+function subscribe(roomName) {
+    if(!roomName){
+    console.error('Room ID is empty');
+    return;
+    }
+
+// 取消订阅之前的房间
+    if (currentRoomName) {
+        unsubscribe(currentRoomName);
+    }
+    currentRoomName = roomName;
+
+    subscriptions['/topic/users/' + roomName] = stompClient.subscribe('/topic/users/' + roomName, function (message) {
+        // 解析消息内容并调用 updateUsers 方法
+                const data = JSON.parse(message.body);
+                updateUsers(data);
+    }).id;
+
+    // 新增：订阅棋局更新
+    subscriptions['/topic/game-progress/' + roomName] = stompClient.subscribe('/topic/game-progress/' + roomName, function (message) {
+        // 解析消息内容并调用 showGameProgress 方法
+                const data = JSON.parse(message.body);
+                showGameProgress(data);
+    }).id;
+    console.log('Subscribed to room:' + roomName);
+}
+
+function unsubscribe(roomName) {
+    if (stompClient && subscriptions['/topic/users/' + roomName]) {
+            stompClient.unsubscribe(subscriptions['/topic/users/' + roomName]);
+            delete subscriptions['/topic/users/' + roomName];
+        }
+
+    if (stompClient && subscriptions['/topic/game-progress/' + roomName]) {
+            stompClient.unsubscribe(subscriptions['/topic/game-progress/' + roomName]);
+            delete subscriptions['/topic/game-progress/' + roomName];
+        }
+
+    console.log('Unsubscribed from room:' + roomName);
 }
 
 // 获取当前游戏状态
 function showGameProgress(data) {
-    updateBoard(data.board, data.removedPoints, data.randomRemovedPoints); // 更新棋盘
-    updateUsers(data.users); // 更新用户列表
+    if (data.board) {
+            updateBoard(data.board, data.removedPoints, data.randomRemovedPoints); // 更新棋盘
+        } else {
+            console.error('Invalid board data:', data.board);
+        }
+
+        if (data.users) {
+            updateUsers(data.users); // 更新用户列表
+        } else {
+            console.error('Invalid users data:', data.users);
+        }
     if (data.poem) {
         displayPoem(data.poem); // 显示诗歌
     }
+    highlightCurrentPlayer(data.currentPlayer); // 高亮当前玩家
 }
 
-function updateUsers(users) {
+function updateUsers(data) {
+// Extract users array from the received data
+    var users;
+console.log('Initial data received:', data);
+        // 检查 data 是否是一个对象，并且包含 users 属性
+        if (data && data.users && Array.isArray(data.users)) {
+            users = data.users;
+        } else if (Array.isArray(data)) {
+            // 如果 data 是一个数组，直接赋值给 users
+            users = data;
+        } else {
+            console.error('Invalid data format:', data);
+            return;
+        }
+
+    console.log('Received users:', users);
+    if (!Array.isArray(users)) {
+            console.error('Expected an array of users, but got:', users);
+            return;
+    }
     var usersList = document.getElementById('users');
     usersList.innerHTML = '';
+
     users.forEach(function(user) {
         var li = document.createElement('li');
+        li.id = 'user-' + user.name; // 为每个用户设置唯一的ID
         li.textContent = user.name + " - Score: " + user.score;
         usersList.appendChild(li);
     });
@@ -69,8 +140,8 @@ function makeMove(row, col) {
         updateBoard(data.board, data.removedPoints, data.randomRemovedPoints); // refresh the board
 
         if (data.winner) {
-            alert(data.winner + ' wins!');
-            updateUsers(data.users);
+            updateUsers(data);
+            blinkWinner(data.winner);
             if (data.poem) {
                 displayPoem(data.poem);  // Display the poem
             }
@@ -100,6 +171,67 @@ function displayPoem(poem) {
     // Apply fade-in effect
     poemSection.style.opacity = '1';
 }
+
+function createRoom() {
+    const roomName = prompt("Enter room name:");
+    const password = prompt("Enter password:");
+
+    if (roomName && password) {
+        fetch('/game/create', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `roomName=${encodeURIComponent(roomName)}&password=${encodeURIComponent(password)}`
+        })
+        .then(response => response.text())
+        .then(roomName => {
+            alert(`Room created successfully. Room ID: ${roomName}`);
+            document.getElementById('room-name').value = roomName;
+            subscribe(roomName); // 订阅新房间
+
+            resetCurrentUserState(); // 清空当前用户的状态
+        })
+        .catch(error => {
+            console.error('Error creating room:', error);
+            alert('Failed to create room.');
+        });
+    }
+}
+
+function joinRoom() {
+    const roomName = document.getElementById('room-name').value;
+    const password = document.getElementById('room-password').value;
+
+    if (roomName && password) {
+            fetch('/game/join', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `roomName=${encodeURIComponent(roomName)}&password=${encodeURIComponent(password)}`,
+                credentials: 'include'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Invalid room ID or password');
+                }
+                return response.text();
+            })
+            .then(message => {
+                alert(message);
+                resetCurrentUserState(); // 清空当前用户的状态
+                subscribe(roomName); // 订阅新房间的消息
+                showGameProgress(roomName); // 获取当前游戏状态
+            })
+            .catch(error => {
+                console.error('Error joining room:', error);
+                alert('Failed to join room: ' + error.message);
+            });
+        } else {
+            alert('Please enter both room ID and password.');
+        }
+    }
 
 function updateBoard(board, removedPoints, randomRemovedPoints) {
     // 检查传入的board是否是一个有效的二维数组
@@ -189,9 +321,14 @@ function registerPlayer() {
             .then(response => response.json())
             .then(data => {
                 alert(data.message);
-                username.disabled = true;
-                registerButton.disabled = true;
-                updateUsers(data.users);
+                //username.disabled = true;
+                //registerButton.disabled = true;
+                if (data.message === "Player registered successfully.") {
+                            // Hide registration fields
+                            username.style.display = 'none';
+                            registerButton.style.display = 'none';
+                        }
+                updateUsers(data);
             })
             .catch(error => {
                 console.error('Error during registration:', error);
@@ -216,16 +353,6 @@ function setStrategy() {
     });
 }
 
-window.onload = function() {
-    connect();
-    createBoard();
-    fetch('/game/users')
-        .then(response => response.json())
-        .then(data => {
-            updateUsers(data); // 修改点5：更新用户列表，显示最新分数
-        });
-}
-
 function createBoard() {
     const table = document.getElementById('board');
     table.innerHTML = ''; // 清空表格
@@ -238,6 +365,25 @@ function createBoard() {
     }
 }
 
+function resetCurrentUserState() {
+    // 清除当前用户名
+    var username = document.getElementById('username');
+    username.value = '';
+    username.style.display = 'block'; // 确保注册字段重新显示
+
+    // 重新启用注册按钮
+    var registerButton = document.querySelector('button[onclick="registerPlayer()"]');
+    registerButton.disabled = false;
+    registerButton.style.display = 'block';
+
+    // 清空用户列表
+    var usersList = document.getElementById('users');
+    usersList.innerHTML = '';
+
+    // 其他需要清理的状态可以在这里添加
+    console.log('Current user state reset.');
+}
+
 // 定义一个方法，随机返回一个飘落动画类
 function getRandomAnimationClass() {
     const animations = ['fall1', 'fall2', 'fall3', 'fall4'];
@@ -247,6 +393,8 @@ function getRandomAnimationClass() {
 // 在指定时间后移除抖动效果并应用随机飘落效果
 function applyShakeAndRandomFallAnimation(cell) {
     cell.classList.add('shake'); // 添加抖动动画效果
+
+    let delay = Math.random()*1000;
 
     setTimeout(() => {
         cell.classList.remove('shake');  // 延迟后移除抖动动画效果
@@ -258,11 +406,79 @@ function applyShakeAndRandomFallAnimation(cell) {
             cell.innerText = '';
             cell.classList.remove(animationClass);
         }, 10000); // 动画持续3秒后清除内容和样式
-    }, 1000); // 延迟1秒后移除抖动效果并应用飘落效果
+    }, delay); // 延迟1秒后移除抖动效果并应用飘落效果
 }
 
-// 页面加载时连接 WebSocket 并启动自动刷新
-window.onload = function() {
-    connect(); // 连接 WebSocket 服务器
-    createBoard();
+function typeWriterEffect(element, text, delay = 150) {
+    let index = 0;
+    element.textContent = '';  // 清空原内容
+    const type = () => {
+        if (index < text.length) {
+            element.textContent += text.charAt(index);
+            index++;
+            if (index < text.length) {
+                setTimeout(type, delay); // 递归调用以继续打印下一个字符
+            }
+        }
+    };
+    type();
+}
+
+function blinkWinner(winnerUsername) {
+    const winnerElement = document.getElementById('user-' + winnerUsername);
+    if (winnerElement) {
+        // 随机选择一个颜文字
+        const randomEmoticon = emoticons[Math.floor(Math.random() * emoticons.length)];
+
+        // 设置span元素用来显示打字机效果
+        const span = document.createElement('span');
+        span.className = 'slide-right';
+        winnerElement.innerHTML = '';  // 清空当前内容
+        winnerElement.appendChild(span);
+
+        typeWriterEffect(span, randomEmoticon, 150); // 使用随机颜文字和打字机效果
+
+        setTimeout(() => {
+            winnerElement.textContent = winnerUsername; // 10秒后恢复为原来的用户名
+        }, 10000); // 根据动画持续时间自行调整
+    } else {
+        console.error('Winner element not found:', winnerUsername);
+    }
+}
+
+
+const emoticons = [
+    '૮₍ •́ ₃•̀₎ა',
+    '૮₍ ˶•ᴗ•˶₎ა',
+    '(｡♥‿♥｡)',
+    '(*＾-＾*)',
+    'ヾ(•ω•`)o',
+    '(づ｡◕‿‿◕｡)づ',
+    '☆*:.｡.o(≧▽≦)o.｡.:*☆',
+    '(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧',
+    '૮・ᴥ - ა',
+    '૮₍ •̥𖥦•̥ ♡ ₎ა',
+    '◖⚆ᴥ⚆◗',
+    '૮・ᴥ・ა',
+    '૮  ´͈ ᗜ `͈ ა♡',
+    '٩(｡•́‿•̀｡)۶',
+    '૮₍ ｡•.•｡₎ა',
+    '٩(◕‿◕｡)۶',
+];
+
+function highlightCurrentPlayer(currentPlayer) {
+    // Find all user elements and remove the blink class
+    const userElements = document.querySelectorAll('#users li');
+    userElements.forEach(el => el.classList.remove('blink'));
+
+    // Find the current player element and add the blink class
+    const currentPlayerElement = document.getElementById('user-' + currentPlayer);
+    if (currentPlayerElement) {
+        currentPlayerElement.classList.add('blink');
+
+        // Remove the blink class after 10 seconds
+        setTimeout(() => {
+            currentPlayerElement.classList.remove('blink');
+        }, 10000);
+    }
 }
